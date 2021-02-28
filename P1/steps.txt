@@ -1,0 +1,47 @@
+GET THE TEST SCRIOT FROM MARNIM!
+YOUR IO MUST BE EXACT!
+
+Globals:
+WORDCORPUS = set()
+# set of all words in all docs? why did i need this? oh, to make IDFS?
+DOCS = DOCS['docname']
+#
+REVERSEINDEX = defaultdict(lambda: [])
+# key: token, value: ['docs', 'with', 'token']
+IDFS = Counter({'token': idf_value, default=0})
+# each doc will need tonhave its own?
+
+functions:
+make_idfs
+make_reverse_index
+make_word_corpus
+process_document
+del_stopwords_then_stem
+calc_tf
+calc_idf()
+calc_tfidf
+timing function(s)
+
+Read docs
+Tokenize docs P
+Remove stopwords from docs P
+Stem tokens in docs P
+Apply Counter() to docs for token freqs P
+Create set of all words in all docs P? Create a word set from each doc in P then merge them at the end? P
+
+Global idfs (from global word set()) P
+Per doc tf-idfs P
+
+SET POOL(8)
+
+For each doc, Calc tf-idf for each word in a doc P:
+ words = DOCS[doc]['tokens'].keys()
+ # tfs = defaultdict(lambda: 0) 🌟 replace these with counter()!
+ Word_count =len(words)
+ For word in words:
+  DOCS[doc]['tfidf']Tfidfs[word] = DOCS[doc]['tokens'][word] * word_count
+calc doc term freq(word, doc words)
+Calc idf(word -> N / num of docs with word)
+Calc tfidf = tf * idf
+Calc query
+Once all processing is complete have inverse index dictionary like: defaultdict{default-lambda: ("None", 0), 'term': PriorityQueue((score, 'docname'), etc)}
