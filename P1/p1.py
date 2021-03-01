@@ -1,6 +1,7 @@
 #!/usr/bin/env python3.6
 
 from collections import Counter, defaultdict
+from functools import reduce
 from math import log10
 from multiprocessing import Pool
 from queue import PriorityQueue
@@ -29,12 +30,16 @@ N = float(0)
 STEMMER = PorterStemmer().stem
 STOP = 'STOP'
 STOPWORDS = stopwords.words('english')
-TFIDFS = Counter()
+# TFIDFS = Counter()
+TFIDFS = defaultdict(lambda: Counter())
 TOKENIZER = RegexpTokenizer(r'[a-zA-Z]+').tokenize
 # Can't DFTS.keys() be used instead of TOKENCORPUS??
-TOKENCORPUS = set()
+# TOKENCORPUS =
 
 def setup():
+    global FILENAMES
+    global IDFS
+    global N
     FILENAMES = listdir(CORPUSDIR)
     N = float(len(FILENAMES))
     t = time()
@@ -48,27 +53,14 @@ def setup():
         # # token_sets = list(p.map(make_token_list_to_set, DOCS.values()))
         # for token_set in token_sets:
         #     TOKENCORPUS.update(token_set)
-    print('duration:', time()-t)
-    print('total unique tokens from corpus', len(DFTS))
-    ord_tokens = [(key, val) for key, val in DFTS.items()]
-    ord_tokens.sort(key=lambda x: x[1], reverse=True)
-    d = Counter()
+    # print('parallel duration:', time()-t)
+    # print('total unique tokens from corpus', len(DFTS))
+    # ord_tokens = [(key, val) for key, val in DFTS.items()]
+    # ord_tokens.sort(key=lambda x: x[1], reverse=True)
     for key, value in DFTS.items():
-        IDFS[key] = N / value
-    for key, value in IDFS.items():
-        d[value] += 1
-    for key, value in d.items():
-        print(f'{value} words with inverse frequency {key}')
-    query('republican thank republican')
-    # print(DOCS['1960-09-26.txt']['tokens'][:10])
-    # print(len(DOCS['1960-09-26.txt']['tokens']))
-    # print(len(DOCS['1960-09-26.txt']['frequencies']))
-    # c = 0
-    # for key,val in DOCS['1960-09-26.txt']['frequencies'].items():
-    #     c += 1
-    #     print(key, val)
-    #     if c > 10: break
-
+        IDFS[key] = log10(N / value)
+    for doc in DOCS:
+        TFIDFS[doc] = make_tfidf(DOCS[doc], IDFS)
 # }
 
 def process_document(filename):
@@ -85,71 +77,114 @@ def process_document(filename):
 def make_token_list_to_set(doc):
     return set(doc.keys())
 
-def make_tfidf(doc):
-    pass
+def make_tfidf(doc, idfs):
+    vector = Counter()
+    for token, freq in doc.items():
+        vector[token] = (1 + log10(freq)) * idfs[token]
+    return normalize_vector(vector)
 
-def make_dfts(docs):
-     # parallelize this
-    for doc in FILENAMES:
-        # make_dft()
-        words = set()
-        for word in DOCS[doc]:
-            words.add(word)
-            # TOKENCORPUS.add(word)
-        return words
-    for word in TOKENCORPUS:
-        dft = 0
-        for doc in FILENAMES:
-            if word in DOCS[doc]['tokens'].keys():
-                dft += 1
-        DFTS[word] = dft
+# def make_dfts(docs):
+#      # parallelize this
+#     for doc in FILENAMES:
+#         # make_dft()
+#         words = set()
+#         for word in DOCS[doc]:
+#             words.add(word)
+#             # TOKENCORPUS.add(word)
+#         return words
+#     for word in TOKENCORPUS:
+#         dft = 0
+#         for doc in FILENAMES:
+#             if word in DOCS[doc]['tokens'].keys():
+#                 dft += 1
+#         DFTS[word] = dft
 
 def make_dft(doc):
     words = set()
     for word in DOCS[doc]:
         words.add(word)
-        # TOKENCORPUS.add(word)
     return words
+
+def make_query_wtd(tokens):
+
+        vector[term] = 1 + log10(freq)
 
 def del_then_stem_words(words):
     return [STEMMER(word) for word in words if word not in STOPWORDS]
 
 def getidf(token):
-    if True:
-        return 0
-    else:
-        return -1
-    pass
+    global IDFS
+    return IDFS[token] if token in IDFS else -1
 
 def getweight(filename, token):
+    global TFIDFS
+    return TFIDFS[filename][token]
     # goal:
     # return DOCS[filename]['tokens'][token]['wtd']
-    return 0
-    for doc in DOCS:
-        pass
-        # compute w-t,d
-        wtd = (1 + log10(tftd)) * (log10(N / dft))
-    pass
+    # return 0
+    # for doc in DOCS:
+    #     pass
+    #     # compute w-t,d
+    #     wtd = (1 + log10(tftd)) * (log10(N / dft))
+    # pass
 
 def query(qstring):
+    global DFTS # The keys of this dict serve as TOKENCORPUS
+    global TFIDFS
     tokens = del_then_stem_words(qstring.lower().split())
+    p_list = defaultdict(lambda: PriorityQueue())
+
+    for token in set(tokens):
+        if token in DFTS:
+            for filename, tfidfvec in TFIDFS.items():
+                if token in tfidfvec:
+                    p_list[token].put((-1 * tfidfvec[token], filename))
+
+    top10 = defaultdict(lambda: set())
+
+    for token in set(tokens):
+        for _ in range(10):
+            if not p_list[token].empty():
+                top10[token].add(p_list[token].get()[1])
+            else:
+                break
+
+    # the docs which contain at least one instance of all query tokens
+    all_docs = set().union(*(top10.values()))
+
+    need_more_than_10 = False
+    if len(all_docs):
+        scores = Counter()
+        query_vector = normalize_vector(Counter(tokens))
+
+        for filename in all_docs:
+            for token, freq in Counter(tokens).items():
+                scores[filename] += query_vector[token] * TFIDFS[filename][token]
+    else:
+        need_more_than_10 = True
+
+    if need_more_than_10:
+        return ('fetch more', 0)
+    elif len(scores):
+        # result = max(scores, key=scores.get)
+        result = 'None'
+        return (result, scores[result])
+    else:
+        return ('None', 0)
+
     # goal:
     # matches = priorityqueue()
     # for token in tokens:
-    matches = {}
+def make_query_vector(tokens):
+    matches = Counter()
     counts = Counter()
-    vector = {}
+    vector = Counter()
     for token in tokens:
         matches[token] = DFTS[token]
         counts[token] += 1
     for term, freq in counts.items():
         vector[term] = 1 + log10(freq)
-    vector = normalize_vector(vector)
-    print(vector)
-    if True:
-        return "test", 0
-    else:
-        return ('None', 0)
+    return normalize_vector(vector)
 
 def normalize_vector(v):
     den = 0
@@ -163,38 +198,43 @@ def normalize_vector(v):
 
 def run_tests():
     setup()
-    exit(0)
+    # exit(0)
     tests = [
-        ("%.12f" % getidf("health"), "0.079181246048"),
-        ("%.12f" % getidf("agenda"), "0.363177902413"),
-        ("%.12f" % getidf("vector"), "-1.000000000000"),
-        ("%.12f" % getidf("reason"), "0.000000000000"),
-        ("%.12f" % getidf("hispan"), "0.632023214705"),
-        ("%.12f" % getidf("hispanic"), "-1.000000000000"),
-        ("%.12f" % getweight("2012-10-03.txt","health"), "0.008528366190"),
-        ("%.12f" % getweight("1960-10-21.txt","reason"), "0.000000000000"),
-        ("%.12f" % getweight("1976-10-22.txt","agenda"), "0.012683891289"),
-        ("%.12f" % getweight("2012-10-16.txt","hispan"), "0.023489163449"),
-        ("%.12f" % getweight("2012-10-16.txt","hispanic"), "0.000000000000"),
-        ("(%s, %.12f)" % query("health insurance wall street"), \
+        (0, "%.12f" % getidf("health"), "0.079181246048"),
+        (0, "%.12f" % getidf("agenda"), "0.363177902413"),
+        (0, "%.12f" % getidf("vector"), "-1.000000000000"),
+        (0, "%.12f" % getidf("reason"), "0.000000000000"),
+        (0, "%.12f" % getidf("hispan"), "0.632023214705"),
+        (0, "%.12f" % getidf("hispanic"), "-1.000000000000"),
+        (0, "%.12f" % getweight("2012-10-03.txt","health"), "0.008528366190"),
+        (0, "%.12f" % getweight("1960-10-21.txt","reason"), "0.000000000000"),
+        (0, "%.12f" % getweight("1976-10-22.txt","agenda"), "0.012683891289"),
+        (0, "%.12f" % getweight("2012-10-16.txt","hispan"), "0.023489163449"),
+        (0, "%.12f" % getweight("2012-10-16.txt","hispanic"), "0.000000000000"),
+        (0, "(%s, %.12f)" % query("health insurance wall street"), \
             "(2012-10-03.txt, 0.033877975254)"),
-        ("(%s, %.12f)" % query("particular constitutional amendment"), \
+        (1, "(%s, %.12f)" % query("particular constitutional amendment"), \
             "(fetch more, 0.000000000000)"),
-        ("(%s, %.12f)" % query("terror attack"), \
+        (0, "(%s, %.12f)" % query("terror attack"), \
             "(2004-09-30.txt, 0.026893338131)"),
-        ("(%s, %.12f)" % query("vector entropy"), "(None, 0.000000000000)")
+        (0, "(%s, %.12f)" % query("vector entropy"), "(None, 0.000000000000)")
     ]
 
-    cases = len(tests)
+    cases = 0
+    passes = 0
     fails = 0
-    for i, (result, score)in enumerate(tests):
-        if result != score:
-            fails += 1
-            cases -= 1
-            print(f'Test {i} failed:')
-            print(result, '==', score)
-            print()
-    print(f'{cases} test cases passed')
+    for i, (active, result, score)in enumerate(tests):
+        if active:
+            cases += 1
+            if result != score:
+                fails += 1
+                print(f'Test {i} failed:')
+                print(result, '==', score)
+                print()
+            else:
+                passes += 1
+    print(f'{cases} test cases run')
+    print(f'{passes} test cases passed')
     print(f'{fails} test cases failed')
 
 if __name__ == '__main__':
