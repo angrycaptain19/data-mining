@@ -100,10 +100,7 @@ def make_tfidf(doc, idfs):
 #         DFTS[word] = dft
 
 def make_dft(doc):
-    words = set()
-    for word in DOCS[doc]:
-        words.add(word)
-    return words
+    return {word for word in DOCS[doc]}
 
 def make_query_wtd(tokens):
 
@@ -187,9 +184,7 @@ def make_query_vector(tokens):
     return normalize_vector(vector)
 
 def normalize_vector(v):
-    den = 0
-    for value in v.values():
-        den += (value ** 2)
+    den = sum((value ** 2) for value in v.values())
     den **= (1/2)
     # v = {(key, (value / den)) for key, value in v.items()}
     for key, value in v.items():
